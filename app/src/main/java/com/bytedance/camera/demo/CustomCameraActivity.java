@@ -1,8 +1,15 @@
 package com.bytedance.camera.demo;
 
+import android.content.Context;
+import android.content.Intent;
+import android.graphics.BitmapFactory;
 import android.hardware.Camera;
+import android.media.CamcorderProfile;
 import android.media.MediaRecorder;
+import android.media.MediaScannerConnection;
+import android.net.Uri;
 import android.os.Bundle;
+import android.provider.MediaStore;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.Surface;
@@ -10,13 +17,16 @@ import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.Window;
 import android.view.WindowManager;
+import android.widget.Toast;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.security.Policy;
 import java.util.List;
 
 import static com.bytedance.camera.demo.utils.Utils.MEDIA_TYPE_IMAGE;
+import static com.bytedance.camera.demo.utils.Utils.MEDIA_TYPE_VIDEO;
 import static com.bytedance.camera.demo.utils.Utils.getOutputMediaFile;
 
 public class CustomCameraActivity extends AppCompatActivity implements SurfaceHolder.Callback {
@@ -30,6 +40,10 @@ public class CustomCameraActivity extends AppCompatActivity implements SurfaceHo
 
     private int rotationDegree = 0;
 
+    private File myLatestVideo, myLatestImage;
+
+    private int nowCameraFacing;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -39,29 +53,125 @@ public class CustomCameraActivity extends AppCompatActivity implements SurfaceHo
         setContentView(R.layout.activity_custom_camera);
 
         mSurfaceView = findViewById(R.id.img);
-        //todo 给SurfaceHolder添加Callback
+
+        mCamera = getCamera(CAMERA_TYPE);
+        nowCameraFacing = Camera.CameraInfo.CAMERA_FACING_BACK;
+
+        SurfaceHolder surfaceHolder = mSurfaceView.getHolder();
+        surfaceHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
+//        SurfaceHolder.Callback callback  = CustomCameraActivity.this;
+        surfaceHolder.addCallback(new SurfaceHolder.Callback() {
+            @Override
+            public void surfaceCreated(SurfaceHolder surfaceHolder) {
+                try{
+                    mCamera.setPreviewDisplay(surfaceHolder);
+                    mCamera.startPreview();
+                }catch (Exception e){
+                    e.printStackTrace();
+                }
+            }
+
+            @Override
+            public void surfaceChanged(SurfaceHolder surfaceHolder, int i, int i1, int i2) {
+
+            }
+
+            @Override
+            public void surfaceDestroyed(SurfaceHolder surfaceHolder) {
+                releaseMediaRecorder();
+                releaseCameraAndPreview();
+            }
+        });
 
         findViewById(R.id.btn_picture).setOnClickListener(v -> {
-            //todo 拍一张照片
+
+            mCamera.takePicture(null,null,mPicture);
         });
 
         findViewById(R.id.btn_record).setOnClickListener(v -> {
-            //todo 录制，第一次点击是start，第二次点击是stop
+
             if (isRecording) {
-                //todo 停止录制
-                isRecording = false;
+                releaseMediaRecorder();
+
             } else {
-                //todo 录制
+                mMediaRecorder = new MediaRecorder();//如果显示'this' is not available 则可能是在外部类中不可达的意思
+
+                mCamera.unlock();
+                mMediaRecorder.setCamera(mCamera);
+
+                mMediaRecorder.setAudioSource(MediaRecorder.AudioSource.CAMCORDER);
+                mMediaRecorder.setVideoSource(MediaRecorder.VideoSource.CAMERA);
+
+                mMediaRecorder.setProfile(CamcorderProfile.get(CamcorderProfile.QUALITY_HIGH));
+                myLatestVideo = getOutputMediaFile(MEDIA_TYPE_VIDEO);
+                mMediaRecorder.setOutputFile(myLatestVideo.toString());
+
+                mMediaRecorder.setPreviewDisplay(mSurfaceView.getHolder().getSurface());
+                mMediaRecorder.setOrientationHint(rotationDegree);
+
+                try{
+                    mMediaRecorder.prepare();
+                    mMediaRecorder.start();
+                    isRecording = true;
+                }catch (Exception e){
+                    releaseMediaRecorder();
+                    e.printStackTrace();
+                }
             }
         });
 
         findViewById(R.id.btn_facing).setOnClickListener(v -> {
-            //todo 切换前后摄像头
+            if(CAMERA_TYPE == Camera.CameraInfo.CAMERA_FACING_BACK){
+                mCamera = getCamera(Camera.CameraInfo.CAMERA_FACING_FRONT);
+            }
+            else{
+                mCamera = getCamera(Camera.CameraInfo.CAMERA_FACING_BACK);
+            }
+            try{
+                mCamera.setPreviewDisplay(mSurfaceView.getHolder());
+                mCamera.startPreview();
+            }catch (Exception e) {
+                e.printStackTrace();
+            }
         });
 
         findViewById(R.id.btn_zoom).setOnClickListener(v -> {
-            //todo 调焦，需要判断手机是否支持
+            if(mCamera!=null) {
+                Camera.Parameters parameter = mCamera.getParameters();
+
+                if (parameter.isZoomSupported()) {
+                    int MAX_ZOOM = parameter.getMaxZoom();
+                    int currnetZoom = parameter.getZoom();
+                    if (currnetZoom <= MAX_ZOOM) {
+                        parameter.setZoom(++currnetZoom);
+                        mCamera.setParameters(parameter);
+                    }
+                } else
+                    Toast.makeText(this, "Zoom Not Avaliable", Toast.LENGTH_LONG).show();
+            }
         });
+    }
+
+    public void StoreToAlbum() {
+        //scanFile(CustomCameraActivity.this, filePath);
+        try{
+            MediaStore.Images.Media.insertImage(getContentResolver(),BitmapFactory.decodeFile(myLatestImage.getAbsolutePath().toString()),myLatestImage.getName(),null);
+            Uri contentUri = Uri.fromFile(new File(myLatestImage.getAbsoluteFile().toString()));
+
+            Intent mediaScanIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
+            mediaScanIntent.setData(contentUri);
+            sendBroadcast(mediaScanIntent);
+        }catch (Exception e) {
+            e.printStackTrace();
+        }
+
+    }
+    private static void scanFile(Context context, String filePath) {
+        if (new File(filePath).exists() == false)
+            return;
+        Intent intent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
+        intent.setData(Uri.fromFile(new File(filePath)));
+        context.sendBroadcast(intent);
     }
 
     public Camera getCamera(int position) {
@@ -69,9 +179,14 @@ public class CustomCameraActivity extends AppCompatActivity implements SurfaceHo
         if (mCamera != null) {
             releaseCameraAndPreview();
         }
-        Camera cam = Camera.open(position);
-
-        //todo 摄像头添加属性，例是否自动对焦，设置旋转方向等
+        Camera cam = null;
+        try{
+            cam = Camera.open(position);
+            rotationDegree = getCameraDisplayOrientation(position);
+            cam.setDisplayOrientation(rotationDegree);
+        }catch (Exception e) {
+            e.printStackTrace();
+        }
 
         return cam;
     }
@@ -118,27 +233,31 @@ public class CustomCameraActivity extends AppCompatActivity implements SurfaceHo
 
 
     private void releaseCameraAndPreview() {
-        //todo 释放camera资源
+        mCamera.stopPreview();
+        mCamera.release();
+        mCamera=null;
     }
 
     Camera.Size size;
 
     private void startPreview(SurfaceHolder holder) {
-        //todo 开始预览
     }
 
 
     private MediaRecorder mMediaRecorder;
 
     private boolean prepareVideoRecorder() {
-        //todo 准备MediaRecorder
-
         return true;
     }
 
 
     private void releaseMediaRecorder() {
-        //todo 释放MediaRecorder
+        mMediaRecorder.stop();
+        mMediaRecorder.reset();
+        mMediaRecorder.release();
+        mMediaRecorder = null;
+        mCamera.lock();
+        isRecording = false;
     }
 
     @Override
@@ -158,6 +277,7 @@ public class CustomCameraActivity extends AppCompatActivity implements SurfaceHo
 
     private Camera.PictureCallback mPicture = (data, camera) -> {
         File pictureFile = getOutputMediaFile(MEDIA_TYPE_IMAGE);
+        myLatestImage = pictureFile;
         if (pictureFile == null) {
             return;
         }
@@ -169,6 +289,16 @@ public class CustomCameraActivity extends AppCompatActivity implements SurfaceHo
             Log.d("mPicture", "Error accessing file: " + e.getMessage());
         }
 
+        try{
+            MediaStore.Images.Media.insertImage(getContentResolver(),BitmapFactory.decodeFile(myLatestImage.getAbsolutePath().toString()),myLatestImage.getName(),null);
+            Uri contentUri = Uri.fromFile(new File(myLatestImage.getAbsoluteFile().toString()));
+
+            Intent mediaScanIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
+            mediaScanIntent.setData(contentUri);
+            sendBroadcast(mediaScanIntent);
+        }catch (Exception e) {
+            e.printStackTrace();
+        }
         mCamera.startPreview();
     };
 

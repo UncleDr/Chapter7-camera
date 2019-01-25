@@ -20,7 +20,6 @@ public class MainActivity extends AppCompatActivity {
         });
 
         findViewById(R.id.btn_custom).setOnClickListener(v -> {
-            //todo 在这里申请相机、麦克风、存储的权限
             startActivity(new Intent(MainActivity.this, CustomCameraActivity.class));
 
         });
