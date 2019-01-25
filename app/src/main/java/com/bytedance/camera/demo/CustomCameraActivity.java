@@ -166,13 +166,7 @@ public class CustomCameraActivity extends AppCompatActivity implements SurfaceHo
         }
 
     }
-    private static void scanFile(Context context, String filePath) {
-        if (new File(filePath).exists() == false)
-            return;
-        Intent intent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
-        intent.setData(Uri.fromFile(new File(filePath)));
-        context.sendBroadcast(intent);
-    }
+
 
     public Camera getCamera(int position) {
         CAMERA_TYPE = position;
@@ -292,7 +286,6 @@ public class CustomCameraActivity extends AppCompatActivity implements SurfaceHo
         try{
             MediaStore.Images.Media.insertImage(getContentResolver(),BitmapFactory.decodeFile(myLatestImage.getAbsolutePath().toString()),myLatestImage.getName(),null);
             Uri contentUri = Uri.fromFile(new File(myLatestImage.getAbsoluteFile().toString()));
-
             Intent mediaScanIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
             mediaScanIntent.setData(contentUri);
             sendBroadcast(mediaScanIntent);
@@ -301,7 +294,6 @@ public class CustomCameraActivity extends AppCompatActivity implements SurfaceHo
         }
         mCamera.startPreview();
     };
-
 
     private Camera.Size getOptimalPreviewSize(List<Camera.Size> sizes, int w, int h) {
         final double ASPECT_TOLERANCE = 0.1;
